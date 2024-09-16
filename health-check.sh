@@ -1,31 +1,24 @@
-#!/bin/bash
-
-# Determine if changes should be committed
+# In the original repository we'll just print the result of status checks,
+# without committing. This avoids generating several commits that would make
+# later upstream merges messy for anyone who forked us.
 commit=true
 origin=$(git remote get-url origin)
-if [[ $origin == *statsig-io/statuspage* ]]; then
+if [[ $origin == *statsig-io/statuspage* ]]
+then
   commit=false
 fi
 
-# Initialize arrays
 KEYSARRAY=()
 URLSARRAY=()
 
-# Read configuration file
 urlsConfig="./urls.cfg"
-if [[ ! -f $urlsConfig ]]; then
-  echo "Configuration file $urlsConfig not found."
-  exit 1
-fi
-
 echo "Reading $urlsConfig"
-while IFS='=' read -r key url; do
-  if [[ -n $key && -n $url ]]; then
-    KEYSARRAY+=("$key")
-    URLSARRAY+=("$url")
-  else
-    echo "Skipping invalid line: $key=$url"
-  fi
+while read -r line
+do
+  echo "  $line"
+  IFS='=' read -ra TOKENS <<< "$line"
+  KEYSARRAY+=(${TOKENS[0]})
+  URLSARRAY+=(${TOKENS[1]})
 done < "$urlsConfig"
 
 echo "***********************"
@@ -33,43 +26,43 @@ echo "Starting health checks with ${#KEYSARRAY[@]} configs:"
 
 mkdir -p logs
 
-# Function to check URL
-check_url() {
-  local url=$1
-  local result="failed"
-  for i in {1..4}; do
-    response=$(curl --write-out '%{http_code}' --silent --output /dev/null "$url")
-    if [[ "$response" =~ ^(200|202|301|302|307)$ ]]; then
+for (( index=0; index < ${#KEYSARRAY[@]}; index++))
+do
+  key="${KEYSARRAY[index]}"
+  url="${URLSARRAY[index]}"
+  echo "  $key=$url"
+
+  for i in 1 2 3 4; 
+  do
+    response=$(curl --write-out '%{http_code}' --silent --output /dev/null $url)
+    if [ "$response" -eq 200 ] || [ "$response" -eq 202 ] || [ "$response" -eq 301 ] || [ "$response" -eq 302 ] || [ "$response" -eq 307 ]; then
       result="success"
+    else
+      result="failed"
+    fi
+    if [ "$result" = "success" ]; then
       break
     fi
     sleep 5
   done
-  echo "$result"
-}
-
-# Perform health checks
-for index in "${!KEYSARRAY[@]}"; do
-  key="${KEYSARRAY[$index]}"
-  url="${URLSARRAY[$index]}"
-  echo "  $key=$url"
-
-  result=$(check_url "$url")
   dateTime=$(date +'%Y-%m-%d %H:%M')
-
-  if [[ $commit == true ]]; then
-    echo "$dateTime, $result" >> "logs/${key}_report.log"
-    # Keep only the last 2000 entries
-    tail -n 2000 "logs/${key}_report.log" > "logs/${key}_report.log"
+  if [[ $commit == true ]]
+  then
+    echo $dateTime, $result >> "logs/${key}_report.log"
+    # By default we keep 2000 last log entries.  Feel free to modify this to meet your needs.
+    echo "$(tail -2000 logs/${key}_report.log)" > "logs/${key}_report.log"
   else
     echo "    $dateTime, $result"
   fi
 done
 
-# Commit and push changes
-if [[ $commit == true ]]; then
+if [[ $commit == true ]]
+then
+  # Let's make Vijaye the most productive person on GitHub.
+  git config --global user.name 'Dipesh'
+  git config --global user.email 'dipesh.mishra@townsquare.au'
   git add -A --force logs/
-  git commit -m '[Automated] Update Health Check Logs'
-  git remote set-url origin https://x-access-token:${GH_PAT}@github.com/tekkondps/health-check.git
+  git commit -am '[Automated] Update Health Check Logs'
+  git remote set-url origin https://${GH_PAT}@github.com/tekkondps/health-check.git
   git push
 fi
