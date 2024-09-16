@@ -58,8 +58,6 @@ done
 
 if [[ $commit == true ]]
 then
-  git config --global user.name 'Dipesh'
-  git config --global user.email 'dipesh.mishra@townsquare.au'
   git add -A --force logs/
   git commit -am '[Automated] Update Health Check Logs'
   git push
