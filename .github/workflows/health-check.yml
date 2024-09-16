@@ -1,21 +1,38 @@
-name: Scheduled Health Check
-permissions:
-  actions: write       # Necessary to cancel workflow executions
-  checks: write        # Necessary to write reports
-  pull-requests: write # Necessary to comment on PRs
-  contents: read
-  packages: write
+name: Health Check
+
 on:
+  push:
+    branches:
+      - main
   schedule:
-    - cron: '*/5 * * * *'   # Runs every 5 minute
+    - cron: '0 * * * *'  # Run every hour
 
 jobs:
-  health_check_job:
+  health-check:
     runs-on: ubuntu-latest
-    name: Check all sites
+
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v2
-        
-      - name: Run Health Check Script
-        run: bash ./health-check.sh
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Git
+      run: |
+        git config --global user.email "github-actions@github.com"
+        git config --global user.name "github-actions"
+
+    - name: Run health check script
+      env:
+        GH_PAT: ${{ secrets.GH_PAT }}
+      run: |
+        chmod +x ./health-check.sh
+        ./health-check.sh
+
+    - name: Commit and push logs
+      if: success()  # Runs only if the previous step was successful
+      env:
+        GH_PAT: ${{ secrets.GH_PAT }}
+      run: |
+        git remote set-url origin https://x-access-token:${GH_PAT}@github.com/tekkondps/health-check.git
+        git add -A --force logs/
+        git commit -m '[Automated] Update Health Check Logs'
+        git push
